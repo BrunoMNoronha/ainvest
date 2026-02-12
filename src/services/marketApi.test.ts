@@ -20,25 +20,23 @@ vi.mock('@/integrations/supabase/client', () => ({
   },
 }));
 
-import { getHistorical, getQuotes, getQuotesDBFirst } from './marketApi';
+import { callMarketDataFunction, getHistorical, getQuotes, getQuotesDBFirst } from './marketApi';
 
 describe('marketApi', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  describe('callMarketDataFunction (via getQuotes)', () => {
+  describe('callMarketDataFunction', () => {
     it('deve retornar sucesso quando invoke responde sem erro', async () => {
-      invokeMock.mockResolvedValue({
-        data: { data: brapiQuotesFixture.results, cached: false },
-        error: null,
-      });
+      const payload = { data: brapiQuotesFixture.results, cached: false };
+      invokeMock.mockResolvedValue({ data: payload, error: null });
 
-      const quotes = await getQuotes(['PETR4', 'VALE3']);
+      const result = await callMarketDataFunction('quote', { symbols: 'PETR4,VALE3' });
 
-      expect(quotes).toHaveLength(2);
+      expect(result).toEqual(payload);
       expect(invokeMock).toHaveBeenCalledWith(
-        expect.stringContaining('market-data/quote?symbols=PETR4%2CVALE3'),
+        'market-data/quote?symbols=PETR4%2CVALE3',
         { method: 'GET' }
       );
     });
@@ -49,7 +47,7 @@ describe('marketApi', () => {
         error: { message: 'falha simulada' },
       });
 
-      await expect(getQuotes(['PETR4'])).rejects.toThrow('falha simulada');
+      await expect(callMarketDataFunction('quote', { symbols: 'PETR4' })).rejects.toThrow('falha simulada');
     });
   });
 
