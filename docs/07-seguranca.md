@@ -117,6 +117,44 @@ if (!BRAPI_TOKEN || !HG_BRASIL_KEY) {
 supabase secrets set --env-file .env
 ```
 
+### Política para SQL/Migrations (obrigatória)
+
+1. **Nunca embutir segredo em SQL**: migrations, functions e seeds não podem conter JWT, API key ou token literal.
+2. **Leitura em runtime**: funções SQL devem ler segredo por configuração segura (`current_setting`) ou integração com secret store.
+3. **Fail fast**: se segredo estiver ausente/vazio, interromper execução com erro explícito e sem vazar valor.
+4. **Revisão de histórico**: qualquer segredo exposto deve ser revogado e rotacionado imediatamente.
+
+### Configuração do segredo no Supabase (SQL settings / secret store)
+
+**Opção A — SQL Settings (`current_setting`)**
+
+```sql
+-- Escopo do banco
+ALTER DATABASE postgres
+SET "app.settings.supabase_anon_key" = '<NOVA_CHAVE_ANON>';
+
+-- Opcional: aplicar sem reconectar sessão atual
+SELECT pg_reload_conf();
+```
+
+**Opção B — Escopo por role**
+
+```sql
+ALTER ROLE postgres
+SET "app.settings.supabase_anon_key" = '<NOVA_CHAVE_ANON>';
+```
+
+> Recomendação: usar valor injetado por ambiente gerenciado (Supabase SQL settings / secret store) e **nunca** versionar o segredo em arquivo `.sql`.
+
+### Rotação de segredos (procedimento)
+
+1. **Gerar nova credencial** no provedor (Supabase > Project Settings > API).
+2. **Aplicar no ambiente** (SQL settings/secret store) sem commit em repositório.
+3. **Validar runtime** executando a função dependente em ambiente seguro.
+4. **Revogar chave antiga** no painel do provedor imediatamente após validação.
+5. **Auditar logs** por uso da chave revogada e abrir incidente se houver tráfego inesperado.
+6. **Registrar evidência** (data, responsável, sistemas impactados, ticket).
+
 ## CORS
 
 ### Configuração
