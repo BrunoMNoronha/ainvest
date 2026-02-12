@@ -12,7 +12,7 @@ const MAX_DATA_AGE_MS = 5 * 60 * 1000;
 
 const FUNCTION_NAME = 'market-data';
 
-async function callMarketDataFunction<T>(endpoint: string, params?: Record<string, string>): Promise<T> {
+export async function callMarketDataFunction<T>(endpoint: string, params?: Record<string, string>): Promise<T> {
   const queryString = params ? '?' + new URLSearchParams(params).toString() : '';
   
   const { data, error } = await supabase.functions.invoke(`${FUNCTION_NAME}/${endpoint}${queryString}`, {
