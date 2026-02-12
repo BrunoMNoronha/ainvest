@@ -45,49 +45,89 @@ paths:
             X-Cache:
               schema:
                 type: string
-                enum: [HIT, MISS]
-              description: Status do cache
+                enum: [HIT, MISS, STALE]
+              description: Status do cache (HIT=cache quente, MISS=fonte externa, STALE=cache antigo por fallback SWR)
+              example: STALE
             X-Cache-Age:
               schema:
                 type: integer
-              description: Idade do cache em segundos
+              description: Idade do cache em segundos (presente quando a resposta usa cache)
+              example: 185
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/MarketOverviewResponse'
-              example:
-                ibov:
-                  name: "IBOVESPA"
-                  value: 128500.00
-                  change: 1250.00
-                  changePercent: 0.98
-                  updatedAt: "2026-02-03T17:00:00Z"
-                ifix:
-                  name: "IFIX"
-                  value: 3150.00
-                  change: -15.00
-                  changePercent: -0.47
-                  updatedAt: "2026-02-03T17:00:00Z"
-                sp500Proxy:
-                  name: "IVVB11"
-                  value: 285.50
-                  change: 3.20
-                  changePercent: 1.13
-                  updatedAt: "2026-02-03T17:00:00Z"
-                usdBrl:
-                  buy: 5.25
-                  sell: 5.26
-                  change: 0.15
-                  updatedAt: "2026-02-03T17:00:00Z"
-                selic: 12.75
-                cdi: 12.65
-                updatedAt: "2026-02-03T17:00:00Z"
-                marketStatus:
-                  isOpen: true
-                  phase: "open"
-                  isHoliday: false
-                cached: true
-                cacheAge: 120
+              examples:
+                cacheHit:
+                  summary: "Retorno com cache válido (X-Cache: HIT)"
+                  value:
+                    ibov:
+                      name: "IBOVESPA"
+                      value: 128500.00
+                      change: 1250.00
+                      changePercent: 0.98
+                      updatedAt: "2026-02-03T17:00:00Z"
+                    ifix:
+                      name: "IFIX"
+                      value: 3150.00
+                      change: -15.00
+                      changePercent: -0.47
+                      updatedAt: "2026-02-03T17:00:00Z"
+                    sp500Proxy:
+                      name: "IVVB11"
+                      value: 285.50
+                      change: 3.20
+                      changePercent: 1.13
+                      updatedAt: "2026-02-03T17:00:00Z"
+                    usdBrl:
+                      buy: 5.25
+                      sell: 5.26
+                      change: 0.15
+                      updatedAt: "2026-02-03T17:00:00Z"
+                    selic: 12.75
+                    cdi: 12.65
+                    updatedAt: "2026-02-03T17:00:00Z"
+                    marketStatus:
+                      isOpen: true
+                      phase: "open"
+                      isHoliday: false
+                    cached: true
+                    cacheAge: 120
+                staleFallback:
+                  summary: "Fallback SWR com cache antigo (X-Cache: STALE)"
+                  value:
+                    ibov:
+                      name: "IBOVESPA"
+                      value: 128420.00
+                      change: 1180.00
+                      changePercent: 0.93
+                      updatedAt: "2026-02-03T16:57:00Z"
+                    ifix:
+                      name: "IFIX"
+                      value: 3148.40
+                      change: -16.10
+                      changePercent: -0.50
+                      updatedAt: "2026-02-03T16:57:00Z"
+                    sp500Proxy:
+                      name: "IVVB11"
+                      value: 285.10
+                      change: 2.85
+                      changePercent: 1.01
+                      updatedAt: "2026-02-03T16:57:00Z"
+                    usdBrl:
+                      buy: 5.24
+                      sell: 5.25
+                      change: 0.12
+                      updatedAt: "2026-02-03T16:57:00Z"
+                    selic: 12.75
+                    cdi: 12.65
+                    updatedAt: "2026-02-03T16:57:00Z"
+                    marketStatus:
+                      isOpen: true
+                      phase: "open"
+                      isHoliday: false
+                    cached: true
+                    cacheAge: 185
         '500':
           $ref: '#/components/responses/InternalError'
         '502':
@@ -113,27 +153,55 @@ paths:
       responses:
         '200':
           description: Cotações retornadas com sucesso
+          headers:
+            X-Cache:
+              schema:
+                type: string
+                enum: [HIT, MISS, STALE]
+              description: Status do cache (HIT=cache quente, MISS=fonte externa, STALE=cache antigo por fallback)
+              example: STALE
+            X-Cache-Age:
+              schema:
+                type: integer
+              description: Idade do cache em segundos (presente quando a resposta usa cache)
+              example: 245
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/QuotesResponse'
-              example:
-                data:
-                  - symbol: "PETR4"
-                    name: "PETROBRAS PN"
-                    price: 38.50
-                    change: 0.75
-                    changePercent: 1.98
-                    volume: 45000000
-                    updatedAt: "2026-02-03T17:00:00Z"
-                  - symbol: "VALE3"
-                    name: "VALE ON"
-                    price: 68.20
-                    change: -0.80
-                    changePercent: -1.16
-                    volume: 32000000
-                    updatedAt: "2026-02-03T17:00:00Z"
-                cached: false
+              examples:
+                freshMiss:
+                  summary: "Consulta sem cache prévio (X-Cache: MISS)"
+                  value:
+                    data:
+                      - symbol: "PETR4"
+                        name: "PETROBRAS PN"
+                        price: 38.50
+                        change: 0.75
+                        changePercent: 1.98
+                        volume: 45000000
+                        updatedAt: "2026-02-03T17:00:00Z"
+                      - symbol: "VALE3"
+                        name: "VALE ON"
+                        price: 68.20
+                        change: -0.80
+                        changePercent: -1.16
+                        volume: 32000000
+                        updatedAt: "2026-02-03T17:00:00Z"
+                    cached: false
+                staleFallback:
+                  summary: "Retorno com fallback de cache (X-Cache: STALE)"
+                  value:
+                    data:
+                      - symbol: "PETR4"
+                        name: "PETROBRAS PN"
+                        price: 38.42
+                        change: 0.68
+                        changePercent: 1.80
+                        volume: 44300000
+                        updatedAt: "2026-02-03T16:56:00Z"
+                    cached: true
+                    cacheAge: 245
         '400':
           $ref: '#/components/responses/BadRequest'
         '404':
@@ -169,26 +237,58 @@ paths:
       responses:
         '200':
           description: Dados históricos retornados com sucesso
+          headers:
+            X-Cache:
+              schema:
+                type: string
+                enum: [HIT, MISS, STALE]
+              description: Status do cache (HIT=cache quente, MISS=fonte externa, STALE=cache antigo por fallback)
+              example: STALE
+            X-Cache-Age:
+              schema:
+                type: integer
+              description: Idade do cache em segundos (presente quando a resposta usa cache)
+              example: 1820
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HistoricalResponse'
-              example:
-                data:
-                  - date: "2026-01-02"
-                    open: 35.20
-                    high: 35.80
-                    low: 34.90
-                    close: 35.50
-                    volume: 42000000
-                  - date: "2026-01-03"
-                    open: 35.50
-                    high: 36.10
-                    low: 35.30
-                    close: 36.00
-                    volume: 38000000
-                cached: true
-                cacheAge: 1800
+              examples:
+                freshMiss:
+                  summary: "Histórico recém consultado (X-Cache: MISS)"
+                  value:
+                    data:
+                      - date: "2026-01-02"
+                        open: 35.20
+                        high: 35.80
+                        low: 34.90
+                        close: 35.50
+                        volume: 42000000
+                      - date: "2026-01-03"
+                        open: 35.50
+                        high: 36.10
+                        low: 35.30
+                        close: 36.00
+                        volume: 38000000
+                    cached: false
+                staleFallback:
+                  summary: "Histórico servido por fallback SWR (X-Cache: STALE)"
+                  value:
+                    data:
+                      - date: "2026-01-02"
+                        open: 35.12
+                        high: 35.70
+                        low: 34.88
+                        close: 35.40
+                        volume: 41850000
+                      - date: "2026-01-03"
+                        open: 35.40
+                        high: 35.95
+                        low: 35.20
+                        close: 35.82
+                        volume: 37780000
+                    cached: true
+                    cacheAge: 1820
         '400':
           $ref: '#/components/responses/BadRequest'
         '404':

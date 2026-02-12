@@ -14,12 +14,25 @@ function envReader(env: EnvMap) {
   return (key: string) => env[key];
 }
 
+function envJwtPadrao(secret: string, extra: EnvMap = {}): EnvMap {
+  return {
+    JWT_SECRET: secret,
+    MARKET_DATA_JWT_ISS: 'https://auth.exemplo.local',
+    MARKET_DATA_JWT_AUD: 'market-data-collector',
+    ...extra,
+  };
+}
+
 function toBase64Url(input: string): string {
   return Buffer.from(input).toString('base64url');
 }
 
-async function criarJwtHs256(payload: Record<string, unknown>, secret: string) {
-  const header = { alg: 'HS256', typ: 'JWT' };
+async function criarJwtHs256(
+  payload: Record<string, unknown>,
+  secret: string,
+  headerExtra: Record<string, unknown> = {}
+) {
+  const header = { alg: 'HS256', typ: 'JWT', ...headerExtra };
   const headerB64 = toBase64Url(JSON.stringify(header));
   const payloadB64 = toBase64Url(JSON.stringify(payload));
   const data = `${headerB64}.${payloadB64}`;
@@ -69,6 +82,8 @@ describe('market-data helpers', () => {
         {
           sub: 'job-collect',
           role: 'service_role',
+          iss: 'https://auth.exemplo.local',
+          aud: 'market-data-collector',
           exp: Math.floor(Date.now() / 1000) + 300,
         },
         secret
@@ -78,8 +93,111 @@ describe('market-data helpers', () => {
         headers: { authorization: `Bearer ${token}` },
       });
 
-      const result = await validateCollectAuthorization(req, envReader({ JWT_SECRET: secret }));
+      const result = await validateCollectAuthorization(req, envReader(envJwtPadrao(secret)));
       expect(result).toMatchObject({ ok: true, authType: 'jwt', subject: 'job-collect' });
+    });
+
+    it('deve rejeitar JWT com alg diferente de HS256', async () => {
+      const secret = 'segredo';
+      const token = await criarJwtHs256(
+        {
+          role: 'service_role',
+          iss: 'https://auth.exemplo.local',
+          aud: 'market-data-collector',
+          exp: Math.floor(Date.now() / 1000) + 300,
+        },
+        secret,
+        { alg: 'RS256' }
+      );
+
+      const req = new Request('http://localhost/collect', {
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      const result = await validateCollectAuthorization(req, envReader(envJwtPadrao(secret)));
+      expect(result).toMatchObject({ ok: false, status: 401, reason: 'invalid_jwt_alg' });
+    });
+
+    it('deve rejeitar JWT com issuer inválido', async () => {
+      const secret = 'segredo';
+      const token = await criarJwtHs256(
+        {
+          role: 'service_role',
+          iss: 'https://issuer.errado.local',
+          aud: 'market-data-collector',
+          exp: Math.floor(Date.now() / 1000) + 300,
+        },
+        secret
+      );
+
+      const req = new Request('http://localhost/collect', {
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      const result = await validateCollectAuthorization(req, envReader(envJwtPadrao(secret)));
+      expect(result).toMatchObject({ ok: false, status: 401, reason: 'invalid_jwt_issuer' });
+    });
+
+    it('deve rejeitar JWT com audience inválida', async () => {
+      const secret = 'segredo';
+      const token = await criarJwtHs256(
+        {
+          role: 'service_role',
+          iss: 'https://auth.exemplo.local',
+          aud: 'aud-errada',
+          exp: Math.floor(Date.now() / 1000) + 300,
+        },
+        secret
+      );
+
+      const req = new Request('http://localhost/collect', {
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      const result = await validateCollectAuthorization(req, envReader(envJwtPadrao(secret)));
+      expect(result).toMatchObject({ ok: false, status: 401, reason: 'invalid_jwt_audience' });
+    });
+
+    it('deve rejeitar JWT com nbf no futuro fora da tolerância', async () => {
+      const secret = 'segredo';
+      const token = await criarJwtHs256(
+        {
+          role: 'service_role',
+          iss: 'https://auth.exemplo.local',
+          aud: 'market-data-collector',
+          nbf: Math.floor(Date.now() / 1000) + 45,
+          exp: Math.floor(Date.now() / 1000) + 300,
+        },
+        secret
+      );
+
+      const req = new Request('http://localhost/collect', {
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      const result = await validateCollectAuthorization(req, envReader(envJwtPadrao(secret)));
+      expect(result).toMatchObject({ ok: false, status: 401, reason: 'jwt_not_active_yet' });
+    });
+
+    it('deve aceitar JWT com nbf no futuro dentro da tolerância', async () => {
+      const secret = 'segredo';
+      const token = await criarJwtHs256(
+        {
+          role: 'service_role',
+          iss: 'https://auth.exemplo.local',
+          aud: 'market-data-collector',
+          nbf: Math.floor(Date.now() / 1000) + 20,
+          exp: Math.floor(Date.now() / 1000) + 300,
+        },
+        secret
+      );
+
+      const req = new Request('http://localhost/collect', {
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      const result = await validateCollectAuthorization(req, envReader(envJwtPadrao(secret)));
+      expect(result).toMatchObject({ ok: true, authType: 'jwt' });
     });
 
     it('deve rejeitar JWT expirado', async () => {
@@ -87,6 +205,8 @@ describe('market-data helpers', () => {
       const token = await criarJwtHs256(
         {
           role: 'service_role',
+          iss: 'https://auth.exemplo.local',
+          aud: 'market-data-collector',
           exp: Math.floor(Date.now() / 1000) - 10,
         },
         secret
@@ -96,7 +216,7 @@ describe('market-data helpers', () => {
         headers: { authorization: `Bearer ${token}` },
       });
 
-      const result = await validateCollectAuthorization(req, envReader({ JWT_SECRET: secret }));
+      const result = await validateCollectAuthorization(req, envReader(envJwtPadrao(secret)));
       expect(result).toMatchObject({ ok: false, status: 401, reason: 'jwt_expired' });
     });
 
@@ -105,6 +225,8 @@ describe('market-data helpers', () => {
       const token = await criarJwtHs256(
         {
           sub: 'job-collect',
+          iss: 'https://auth.exemplo.local',
+          aud: 'market-data-collector',
           exp: Math.floor(Date.now() / 1000) + 300,
         },
         secret
@@ -114,7 +236,7 @@ describe('market-data helpers', () => {
         headers: { authorization: `Bearer ${token}` },
       });
 
-      const result = await validateCollectAuthorization(req, envReader({ JWT_SECRET: secret }));
+      const result = await validateCollectAuthorization(req, envReader(envJwtPadrao(secret)));
       expect(result).toMatchObject({ ok: false, status: 403, reason: 'missing_required_claim' });
     });
   });
