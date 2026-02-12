@@ -2,8 +2,10 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-internal-token, x-internal-key',
 };
+
+const collectRateLimitMem = new Map<string, { count: number; resetAt: number }>();
 
 // B3 Holiday blocklist for 2026
 const HOLIDAYS_2026 = [
@@ -62,6 +64,149 @@ async function setCache(key: string, data: any, ttlSeconds: number): Promise<voi
   } catch (error) {
     console.error('Cache write error:', error);
   }
+}
+
+function toBase64Url(input: ArrayBuffer): string {
+  const bytes = new Uint8Array(input);
+  let binary = '';
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function parseJwtPayload(token: string): Record<string, any> | null {
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+
+  try {
+    const payloadB64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padding = '='.repeat((4 - (payloadB64.length % 4)) % 4);
+    const decoded = atob(payloadB64 + padding);
+    return JSON.parse(decoded);
+  } catch {
+    return null;
+  }
+}
+
+async function verifyJwtHs256(token: string, secret: string): Promise<boolean> {
+  const parts = token.split('.');
+  if (parts.length !== 3) return false;
+
+  const [header, payload, signature] = parts;
+  const data = `${header}.${payload}`;
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+
+  const signed = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(data));
+  return toBase64Url(signed) === signature;
+}
+
+async function validateCollectAuthorization(req: Request): Promise<{ ok: boolean; status?: number; reason?: string; authType?: string; subject?: string }> {
+  const internalToken = req.headers.get('x-internal-token');
+  const expectedInternalToken = Deno.env.get('MARKET_DATA_INTERNAL_TOKEN');
+
+  if (internalToken) {
+    if (!expectedInternalToken) {
+      return { ok: false, status: 403, reason: 'internal_token_not_configured' };
+    }
+    if (internalToken !== expectedInternalToken) {
+      return { ok: false, status: 403, reason: 'invalid_internal_token' };
+    }
+    return { ok: true, authType: 'internal-token', subject: 'internal' };
+  }
+
+  const authHeader = req.headers.get('authorization') || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+  if (!token) {
+    return { ok: false, status: 401, reason: 'missing_credentials' };
+  }
+
+  const jwtSecret = Deno.env.get('JWT_SECRET') || Deno.env.get('SUPABASE_JWT_SECRET');
+  if (!jwtSecret) {
+    return { ok: false, status: 403, reason: 'jwt_secret_not_configured' };
+  }
+
+  const payload = parseJwtPayload(token);
+  if (!payload) {
+    return { ok: false, status: 401, reason: 'invalid_jwt_payload' };
+  }
+
+  const isValidSignature = await verifyJwtHs256(token, jwtSecret);
+  if (!isValidSignature) {
+    return { ok: false, status: 401, reason: 'invalid_jwt_signature' };
+  }
+
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  if (typeof payload.exp === 'number' && payload.exp < nowSeconds) {
+    return { ok: false, status: 401, reason: 'jwt_expired' };
+  }
+
+  const requiredClaimName = Deno.env.get('MARKET_DATA_COLLECT_CLAIM') || 'role';
+  const requiredClaimValue = Deno.env.get('MARKET_DATA_COLLECT_CLAIM_VALUE') || 'service_role';
+  if (String(payload[requiredClaimName] || '') !== requiredClaimValue) {
+    return { ok: false, status: 403, reason: 'missing_required_claim' };
+  }
+
+  return { ok: true, authType: 'jwt', subject: payload.sub || payload.role || 'jwt' };
+}
+
+function getRequestIdentity(req: Request): string {
+  const forwardedFor = req.headers.get('x-forwarded-for') || req.headers.get('cf-connecting-ip') || 'unknown-ip';
+  const firstIp = forwardedFor.split(',')[0]?.trim() || 'unknown-ip';
+  const apiKey = req.headers.get('x-internal-key') || req.headers.get('apikey') || '';
+  const keySuffix = apiKey ? apiKey.slice(-6) : 'no-key';
+  return `${firstIp}:${keySuffix}`;
+}
+
+async function checkCollectRateLimit(identity: string, maxRequests = 10, windowSeconds = 60): Promise<{ allowed: boolean; remaining: number }> {
+  const redisUrl = Deno.env.get('UPSTASH_REDIS_REST_URL');
+  const redisToken = Deno.env.get('UPSTASH_REDIS_REST_TOKEN');
+  const key = `rl:collect:${identity}`;
+
+  if (redisUrl && redisToken) {
+    try {
+      const incrResponse = await fetch(`${redisUrl}/incr/${encodeURIComponent(key)}`, {
+        headers: { Authorization: `Bearer ${redisToken}` }
+      });
+      const incrData = await incrResponse.json();
+      const count = Number(incrData.result || 0);
+
+      if (count === 1) {
+        await fetch(`${redisUrl}/expire/${encodeURIComponent(key)}/${windowSeconds}`, {
+          headers: { Authorization: `Bearer ${redisToken}` }
+        });
+      }
+
+      return {
+        allowed: count <= maxRequests,
+        remaining: Math.max(0, maxRequests - count)
+      };
+    } catch (error) {
+      console.error('Rate limit via Redis falhou, usando memória local', error);
+    }
+  }
+
+  const now = Date.now();
+  const current = collectRateLimitMem.get(identity);
+
+  if (!current || current.resetAt <= now) {
+    collectRateLimitMem.set(identity, { count: 1, resetAt: now + windowSeconds * 1000 });
+    return { allowed: true, remaining: maxRequests - 1 };
+  }
+
+  current.count += 1;
+  collectRateLimitMem.set(identity, current);
+
+  return {
+    allowed: current.count <= maxRequests,
+    remaining: Math.max(0, maxRequests - current.count)
+  };
 }
 
 // Market status helper
@@ -522,6 +667,37 @@ serve(async (req) => {
         return await handleMarketStatus();
       
       case 'collect':
+        if (req.method !== 'POST') {
+          return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+            status: 405,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Allow': 'POST' }
+          });
+        }
+
+        const authResult = await validateCollectAuthorization(req);
+        if (!authResult.ok) {
+          console.warn(`[collect] acesso negado: motivo=${authResult.reason || 'unknown'}`);
+          return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+            status: authResult.status || 401,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        const identity = getRequestIdentity(req);
+        const rateLimit = await checkCollectRateLimit(identity);
+        if (!rateLimit.allowed) {
+          console.warn(`[collect] limite excedido: identidade=${identity}`);
+          return new Response(JSON.stringify({ error: 'Too many requests' }), {
+            status: 429,
+            headers: {
+              ...corsHeaders,
+              'Content-Type': 'application/json',
+              'Retry-After': '60'
+            }
+          });
+        }
+
+        console.log(`[collect] autorizado via ${authResult.authType}, restante=${rateLimit.remaining}`);
         return await handleCollect();
       
       default:
