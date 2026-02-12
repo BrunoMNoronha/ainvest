@@ -31,7 +31,11 @@ BEGIN
 
   -- 2. Preparar chamada à Edge Function
   v_edge_url := 'https://iycqotgkopbyxpfdojal.supabase.co/functions/v1/market-data/collect';
-  v_anon_key := 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml5Y3FvdGdrb3BieXhwZmRvamFsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAwNzMxOTEsImV4cCI6MjA4NTY0OTE5MX0.ukc5s7a7J2ec5RE5IZM1XrfGC4l1WutSzhkVfn3Jb8c';
+  v_anon_key := nullif(trim(current_setting('app.settings.supabase_anon_key', true)), '');
+
+  IF v_anon_key IS NULL THEN
+    RAISE EXCEPTION 'Segredo ausente: configure app.settings.supabase_anon_key para executar collect_market_data()';
+  END IF;
 
   -- 3. Chamar Edge Function via pg_net (async HTTP request)
   SELECT net.http_post(
