@@ -1,0 +1,553 @@
+openapi: 3.0.3
+info:
+  title: AInvest Market Data API
+  description: |
+    API de dados de mercado do AInvest, fornecendo cotações, dados históricos 
+    e indicadores macroeconômicos do mercado brasileiro (B3).
+    
+    ## Características
+    - Cache SWR (Stale-While-Revalidate) com Upstash Redis
+    - Dados com atraso de 15 minutos (regulação B3)
+    - Polling inteligente baseado em horário de mercado
+    
+    ## Fontes de Dados
+    - **BRAPI.dev**: Ações, ETFs, FIIs, índices B3
+    - **HG Brasil**: Câmbio, SELIC, CDI
+  version: 1.0.0
+  contact:
+    name: AInvest Team
+    url: https://ainvest.app
+  license:
+    name: Proprietary
+    url: https://ainvest.app/terms
+
+servers:
+  - url: https://iycqotgkopbyxpfdojal.supabase.co/functions/v1/market-data
+    description: Produção
+
+paths:
+  /market-overview:
+    get:
+      summary: Visão geral do mercado
+      description: |
+        Retorna dados consolidados dos principais índices e indicadores macro.
+        Inclui IBOVESPA, IFIX, USD/BRL, SELIC e CDI.
+      operationId: getMarketOverview
+      tags:
+        - Market Data
+      responses:
+        '200':
+          description: Dados de mercado retornados com sucesso
+          headers:
+            X-Cache:
+              schema:
+                type: string
+                enum: [HIT, MISS]
+              description: Status do cache
+            X-Cache-Age:
+              schema:
+                type: integer
+              description: Idade do cache em segundos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MarketOverviewResponse'
+              example:
+                ibov:
+                  name: "IBOVESPA"
+                  value: 128500.00
+                  change: 1250.00
+                  changePercent: 0.98
+                  updatedAt: "2026-02-03T17:00:00Z"
+                ifix:
+                  name: "IFIX"
+                  value: 3150.00
+                  change: -15.00
+                  changePercent: -0.47
+                  updatedAt: "2026-02-03T17:00:00Z"
+                sp500Proxy:
+                  name: "IVVB11"
+                  value: 285.50
+                  change: 3.20
+                  changePercent: 1.13
+                  updatedAt: "2026-02-03T17:00:00Z"
+                usdBrl:
+                  buy: 5.25
+                  sell: 5.26
+                  change: 0.15
+                  updatedAt: "2026-02-03T17:00:00Z"
+                selic: 12.75
+                cdi: 12.65
+                updatedAt: "2026-02-03T17:00:00Z"
+                marketStatus:
+                  isOpen: true
+                  phase: "open"
+                  isHoliday: false
+                cached: true
+                cacheAge: 120
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+
+  /quote:
+    get:
+      summary: Cotações de ativos
+      description: |
+        Retorna cotações atuais para um ou mais símbolos.
+        Máximo de 20 símbolos por requisição.
+      operationId: getQuotes
+      tags:
+        - Market Data
+      parameters:
+        - name: symbols
+          in: query
+          required: true
+          description: Lista de símbolos separados por vírgula
+          schema:
+            type: string
+            example: "PETR4,VALE3,ITUB4"
+      responses:
+        '200':
+          description: Cotações retornadas com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuotesResponse'
+              example:
+                data:
+                  - symbol: "PETR4"
+                    name: "PETROBRAS PN"
+                    price: 38.50
+                    change: 0.75
+                    changePercent: 1.98
+                    volume: 45000000
+                    updatedAt: "2026-02-03T17:00:00Z"
+                  - symbol: "VALE3"
+                    name: "VALE ON"
+                    price: 68.20
+                    change: -0.80
+                    changePercent: -1.16
+                    volume: 32000000
+                    updatedAt: "2026-02-03T17:00:00Z"
+                cached: false
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /historical:
+    get:
+      summary: Dados históricos
+      description: |
+        Retorna dados históricos OHLCV para um símbolo.
+        Suporta diversos períodos de tempo.
+      operationId: getHistorical
+      tags:
+        - Market Data
+      parameters:
+        - name: symbol
+          in: query
+          required: true
+          description: Símbolo do ativo
+          schema:
+            type: string
+            example: "PETR4"
+        - name: range
+          in: query
+          required: false
+          description: Período de dados
+          schema:
+            type: string
+            enum: [1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y]
+            default: 1mo
+      responses:
+        '200':
+          description: Dados históricos retornados com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HistoricalResponse'
+              example:
+                data:
+                  - date: "2026-01-02"
+                    open: 35.20
+                    high: 35.80
+                    low: 34.90
+                    close: 35.50
+                    volume: 42000000
+                  - date: "2026-01-03"
+                    open: 35.50
+                    high: 36.10
+                    low: 35.30
+                    close: 36.00
+                    volume: 38000000
+                cached: true
+                cacheAge: 1800
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /status:
+    get:
+      summary: Status do mercado
+      description: |
+        Retorna o status atual do mercado B3.
+        Inclui informação sobre horário de pregão e feriados.
+      operationId: getMarketStatus
+      tags:
+        - Market Data
+      responses:
+        '200':
+          description: Status retornado com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MarketStatus'
+              example:
+                isOpen: true
+                phase: "open"
+                nextOpen: null
+                isHoliday: false
+                holidayName: null
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  schemas:
+    MarketIndex:
+      type: object
+      required:
+        - name
+        - value
+        - change
+        - changePercent
+        - updatedAt
+      properties:
+        name:
+          type: string
+          description: Nome do índice
+          example: "IBOVESPA"
+        value:
+          type: number
+          format: double
+          description: Valor atual do índice
+          example: 128500.00
+        change:
+          type: number
+          format: double
+          description: Variação absoluta
+          example: 1250.00
+        changePercent:
+          type: number
+          format: double
+          description: Variação percentual
+          example: 0.98
+        updatedAt:
+          type: string
+          format: date-time
+          description: Data/hora da última atualização
+          example: "2026-02-03T17:00:00Z"
+
+    Quote:
+      type: object
+      required:
+        - symbol
+        - name
+        - price
+      properties:
+        symbol:
+          type: string
+          description: Símbolo do ativo
+          example: "PETR4"
+        name:
+          type: string
+          description: Nome do ativo
+          example: "PETROBRAS PN"
+        price:
+          type: number
+          format: double
+          description: Preço atual
+          example: 38.50
+        change:
+          type: number
+          format: double
+          description: Variação absoluta
+          example: 0.75
+        changePercent:
+          type: number
+          format: double
+          description: Variação percentual
+          example: 1.98
+        volume:
+          type: integer
+          format: int64
+          description: Volume negociado
+          example: 45000000
+        updatedAt:
+          type: string
+          format: date-time
+          description: Data/hora da última atualização
+          example: "2026-02-03T17:00:00Z"
+
+    Candle:
+      type: object
+      required:
+        - date
+        - open
+        - high
+        - low
+        - close
+      properties:
+        date:
+          type: string
+          format: date
+          description: Data do candle
+          example: "2026-01-02"
+        open:
+          type: number
+          format: double
+          description: Preço de abertura
+          example: 35.20
+        high:
+          type: number
+          format: double
+          description: Preço máximo
+          example: 35.80
+        low:
+          type: number
+          format: double
+          description: Preço mínimo
+          example: 34.90
+        close:
+          type: number
+          format: double
+          description: Preço de fechamento
+          example: 35.50
+        volume:
+          type: integer
+          format: int64
+          description: Volume negociado
+          example: 42000000
+
+    MarketStatus:
+      type: object
+      required:
+        - isOpen
+        - phase
+        - isHoliday
+      properties:
+        isOpen:
+          type: boolean
+          description: Se o mercado está em horário de pregão
+          example: true
+        phase:
+          type: string
+          enum: [pre-market, open, after-hours, closed]
+          description: Fase atual do mercado
+          example: "open"
+        nextOpen:
+          type: string
+          format: date-time
+          nullable: true
+          description: Próxima abertura (se fechado)
+          example: null
+        isHoliday:
+          type: boolean
+          description: Se hoje é feriado
+          example: false
+        holidayName:
+          type: string
+          nullable: true
+          description: Nome do feriado (se aplicável)
+          example: null
+
+    UsdBrl:
+      type: object
+      required:
+        - buy
+        - sell
+        - change
+        - updatedAt
+      properties:
+        buy:
+          type: number
+          format: double
+          description: Cotação de compra
+          example: 5.25
+        sell:
+          type: number
+          format: double
+          description: Cotação de venda
+          example: 5.26
+        change:
+          type: number
+          format: double
+          description: Variação percentual
+          example: 0.15
+        updatedAt:
+          type: string
+          format: date-time
+          description: Data/hora da última atualização
+          example: "2026-02-03T17:00:00Z"
+
+    MarketOverviewResponse:
+      type: object
+      required:
+        - ibov
+        - ifix
+        - sp500Proxy
+        - usdBrl
+        - selic
+        - cdi
+        - updatedAt
+        - marketStatus
+        - cached
+      properties:
+        ibov:
+          $ref: '#/components/schemas/MarketIndex'
+        ifix:
+          $ref: '#/components/schemas/MarketIndex'
+        sp500Proxy:
+          $ref: '#/components/schemas/MarketIndex'
+        usdBrl:
+          $ref: '#/components/schemas/UsdBrl'
+        selic:
+          type: number
+          format: double
+          description: Taxa SELIC atual
+          example: 12.75
+        cdi:
+          type: number
+          format: double
+          description: Taxa CDI atual
+          example: 12.65
+        updatedAt:
+          type: string
+          format: date-time
+          description: Timestamp da resposta
+          example: "2026-02-03T17:00:00Z"
+        marketStatus:
+          $ref: '#/components/schemas/MarketStatus'
+        cached:
+          type: boolean
+          description: Se resposta veio do cache
+          example: true
+        cacheAge:
+          type: integer
+          description: Idade do cache em segundos
+          example: 120
+
+    QuotesResponse:
+      type: object
+      required:
+        - data
+        - cached
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Quote'
+        cached:
+          type: boolean
+          description: Se resposta veio do cache
+          example: false
+
+    HistoricalResponse:
+      type: object
+      required:
+        - data
+        - cached
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Candle'
+        cached:
+          type: boolean
+          description: Se resposta veio do cache
+          example: true
+        cacheAge:
+          type: integer
+          description: Idade do cache em segundos
+          example: 1800
+
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              description: Código de erro
+              example: "INVALID_SYMBOL"
+            message:
+              type: string
+              description: Mensagem de erro
+              example: "Symbol 'XYZ' not found"
+            details:
+              type: object
+              additionalProperties: true
+              description: Detalhes adicionais
+
+  responses:
+    BadRequest:
+      description: Parâmetros inválidos
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: "INVALID_PARAMETERS"
+              message: "Parameter 'symbols' is required"
+
+    NotFound:
+      description: Recurso não encontrado
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: "SYMBOL_NOT_FOUND"
+              message: "Symbol 'XYZ123' not found in B3"
+              details:
+                symbol: "XYZ123"
+
+    InternalError:
+      description: Erro interno do servidor
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: "INTERNAL_ERROR"
+              message: "An unexpected error occurred"
+
+    UpstreamError:
+      description: Erro na API externa
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: "UPSTREAM_ERROR"
+              message: "Failed to fetch from BRAPI"
+
+tags:
+  - name: Market Data
+    description: Endpoints de dados de mercado
