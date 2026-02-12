@@ -1,0 +1,18 @@
+{
+  "results": {
+    "currencies": {
+      "USD": {
+        "buy": 5.12,
+        "sell": 5.13,
+        "variation": 0.27
+      }
+    },
+    "taxes": [
+      {
+        "date": "2026-01-30",
+        "selic": 10.5,
+        "cdi": 10.4
+      }
+    ]
+  }
+}
