@@ -1,73 +1,51 @@
-# Welcome to your Lovable project
+# AInvest
 
-## Project info
+Plataforma de analise e sinais de trading para o mercado brasileiro (B3).
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## Visao geral
+- Frontend React + Vite
+- Backend Supabase Edge Functions + PostgreSQL
+- Cache SWR com Upstash Redis
 
-## How can I edit this code?
+## Requisitos
+- Node.js 18+ e npm
+- (Opcional) Supabase CLI para rodar Edge Functions localmente
 
-There are several ways of editing your application.
+## Configuracao
 
-**Use Lovable**
+Crie ou atualize o arquivo `.env` na raiz com as variaveis abaixo:
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+```
+VITE_SUPABASE_URL=
+VITE_SUPABASE_PUBLISHABLE_KEY=
+VITE_SUPABASE_PROJECT_ID=
+BRAPI_TOKEN=
+HG_BRASIL_KEY=
+UPSTASH_REDIS_REST_URL=
+UPSTASH_REDIS_REST_TOKEN=
+```
 
-Changes made via Lovable will be committed automatically to this repo.
+Notas:
+- Variaveis com prefixo `VITE_` sao usadas no frontend.
+- As demais sao usadas pela Edge Function `market-data`.
+- Para deploy no Supabase, sincronize com `supabase secrets set --env-file .env`.
 
-**Use your preferred IDE**
+## Rodar local
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+```
+npm install
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+Servidor em http://localhost:8080.
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+## Build e preview
 
-**Use GitHub Codespaces**
+```
+npm run build
+npm run preview
+```
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+## Documentacao
 
-## What technologies are used for this project?
-
-This project is built with:
-
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+Veja `docs/README.md` para a visao completa do sistema e ADRs.

@@ -63,9 +63,9 @@ O hub utiliza três tabelas no banco de dados:
 | OpenAPI 3.0 | [/openapi/v1.yaml](/openapi/v1.yaml) |
 | JSON Schemas | [/schemas](/schemas/) |
 
-## 🤖 Regras para o Lovable
+## 🤖 Regras para edicoes automatizadas
 
-O Lovable deve seguir estas regras ao editar o projeto:
+Qualquer automacao deve seguir estas regras ao editar o projeto:
 
 1. **Sempre ler a documentação antes de editar** - Consultar `/docs` para entender decisões
 2. **Nunca contradizer decisões documentadas** - Solicitar confirmação se houver conflito
@@ -93,4 +93,4 @@ O Lovable deve seguir estas regras ao editar o projeto:
 
 ---
 
-**Última atualização**: 03 de Fevereiro de 2026
+**Última atualização**: 12 de Fevereiro de 2026

@@ -87,7 +87,7 @@ supabase functions logs market-data | grep "error"
 **Diagnóstico**:
 1. Verificar status das APIs externas
 2. Testar conectividade direta
-3. Verificar se secrets estão configurados
+3. Verificar se secrets estão configurados e sincronizados a partir do `.env`
 
 **Resolução**:
 ```bash
@@ -144,18 +144,20 @@ curl -X GET "https://.../market-data/market-overview" \
 ### Checklist Pré-Deploy
 
 - [ ] Testes passando localmente
-- [ ] Secrets configurados no ambiente alvo
+- [ ] Secrets configurados no ambiente alvo e sincronizados do `.env`
 - [ ] Backup de configuração atual
 - [ ] Janela de manutenção comunicada (se aplicável)
 
+### Deploy do Frontend
+
+1. Executar `npm run build`
+2. Publicar o diretório `dist/` no provedor de hosting estático
+
 ### Deploy de Edge Function
 
-O deploy é automático via Lovable:
-
-1. Commit no branch principal
-2. Build automático
-3. Deploy para Supabase Edge Functions
-4. Verificação de saúde
+1. Sincronizar secrets: `supabase secrets set --env-file .env`
+2. Deploy: `supabase functions deploy market-data`
+3. Verificar logs e health checks
 
 ### Rollback
 
@@ -194,10 +196,11 @@ curl "https://.../market-data/market-overview"
 
 **Passos**:
 1. Gerar nova chave no provedor (BRAPI/HG)
-2. Atualizar secret no Supabase
-3. Fazer deploy da Edge Function
-4. Verificar logs por erros de autenticação
-5. Revogar chave antiga após 24h
+2. Atualizar o `.env` na raiz
+3. Sincronizar secrets: `supabase secrets set --env-file .env`
+4. Fazer deploy da Edge Function
+5. Verificar logs por erros de autenticação
+6. Revogar chave antiga após 24h
 
 **Rollback**: Restaurar chave anterior se nova falhar
 

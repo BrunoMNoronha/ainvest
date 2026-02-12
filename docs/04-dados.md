@@ -20,6 +20,8 @@ BRAPI é uma API brasileira focada em dados da B3, oferecendo:
 
 ### Endpoints Utilizados
 
+Credenciais em `.env`: `BRAPI_TOKEN`.
+
 #### GET /api/quote/{symbol}
 
 Retorna cotação atual de um ou mais ativos.
@@ -82,6 +84,8 @@ HG Brasil fornece dados macroeconômicos e de câmbio:
 - Indicadores de inflação
 
 ### Endpoints Utilizados
+
+Credenciais em `.env`: `HG_BRASIL_KEY`.
 
 #### GET /finance
 

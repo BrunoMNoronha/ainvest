@@ -80,14 +80,27 @@ Não há cadastro público. Apenas login.
 | `UPSTASH_REDIS_REST_URL` | URL do Upstash Redis | Nunca |
 | `UPSTASH_REDIS_REST_TOKEN` | Token do Upstash Redis | Anual |
 
+### Fonte Unica
+
+As credenciais ficam centralizadas no arquivo `.env` na raiz do projeto.
+Em ambientes Supabase, sincronize essas variaveis com os secrets do projeto.
+
 ### Princípios
 
 1. **Nunca no código**: Secrets jamais são commitados
 2. **Apenas backend**: Chaves privadas só existem na Edge Function
 3. **Variáveis de ambiente**: Uso de `Deno.env.get()`
 4. **Criptografia em repouso**: Supabase criptografa secrets
+5. **Fonte unica local**: `.env` como referencia para o desenvolvimento
 
 ### Configuração
+
+```env
+BRAPI_TOKEN=
+HG_BRASIL_KEY=
+UPSTASH_REDIS_REST_URL=
+UPSTASH_REDIS_REST_TOKEN=
+```
 
 ```typescript
 // Edge Function - Acesso seguro
@@ -99,42 +112,27 @@ if (!BRAPI_TOKEN || !HG_BRASIL_KEY) {
 }
 ```
 
+```bash
+# Sincronizar secrets no Supabase
+supabase secrets set --env-file .env
+```
+
 ## CORS
 
 ### Configuração
 
 ```typescript
 const corsHeaders = {
-  'Access-Control-Allow-Origin': getAllowedOrigin(request),
+  'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Max-Age': '86400',
 };
-
-function getAllowedOrigin(request: Request): string {
-  const origin = request.headers.get('Origin') || '';
-  const allowed = [
-    'https://lovable.dev',
-    'http://localhost:5173',
-    /https:\/\/.*\.lovable\.app$/
-  ];
-  
-  for (const pattern of allowed) {
-    if (typeof pattern === 'string' && origin === pattern) return origin;
-    if (pattern instanceof RegExp && pattern.test(origin)) return origin;
-  }
-  
-  return 'https://lovable.dev';
-}
 ```
 
 ### Domínios Permitidos
 
-| Domínio | Ambiente |
-|---------|----------|
-| `https://lovable.dev` | Produção |
-| `https://*.lovable.app` | Preview |
-| `http://localhost:5173` | Desenvolvimento |
+Atualmente permissivo (`*`). Restringir por dominio conforme o ambiente de deploy.
 
 ## Rate Limiting
 

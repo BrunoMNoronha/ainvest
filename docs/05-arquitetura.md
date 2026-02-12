@@ -30,7 +30,7 @@
 
 | Serviço | Uso |
 |---------|-----|
-| Lovable | Hosting e deploy |
+| Hospedagem estatica | Hosting e deploy |
 | Supabase | Backend as a Service |
 | Upstash | Managed Redis |
 
