@@ -1,4 +1,6 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import "https://deno.land/std@0.168.0/dotenv/load.ts";
+import process from "node:process";
 import {
   checkCollectRateLimit,
   getRequestIdentity,
@@ -10,6 +12,7 @@ import {
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-internal-token, x-internal-key',
+  'Access-Control-Allow-Methods': 'POST, GET, OPTIONS, PUT, DELETE',
 };
 
 // B3 Holiday blocklist for 2026
@@ -30,8 +33,8 @@ const HOLIDAYS_2026 = [
 
 // Redis cache helper functions
 async function getFromCache(key: string): Promise<{ data: any; age: number } | null> {
-  const redisUrl = Deno.env.get('UPSTASH_REDIS_REST_URL');
-  const redisToken = Deno.env.get('UPSTASH_REDIS_REST_TOKEN');
+  const redisUrl = process.env.UPSTASH_REDIS_REST_URL;
+  const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
   
   if (!redisUrl || !redisToken) {
     console.log('Redis not configured, skipping cache');
@@ -56,8 +59,8 @@ async function getFromCache(key: string): Promise<{ data: any; age: number } | n
 }
 
 async function setCache(key: string, data: any, ttlSeconds: number): Promise<void> {
-  const redisUrl = Deno.env.get('UPSTASH_REDIS_REST_URL');
-  const redisToken = Deno.env.get('UPSTASH_REDIS_REST_TOKEN');
+  const redisUrl = process.env.UPSTASH_REDIS_REST_URL;
+  const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
   
   if (!redisUrl || !redisToken) return;
 
@@ -107,7 +110,7 @@ function getMarketStatus(): { isOpen: boolean; phase: string; isHoliday: boolean
 
 // Fetch quotes from BRAPI
 async function fetchBrapiQuotes(symbols: string[]): Promise<any[]> {
-  const token = Deno.env.get('BRAPI_TOKEN');
+  const token = process.env.BRAPI_TOKEN;
   const symbolList = symbols.join(',');
   const url = token 
     ? `https://brapi.dev/api/quote/${symbolList}?token=${token}`
@@ -126,7 +129,7 @@ async function fetchBrapiQuotes(symbols: string[]): Promise<any[]> {
 
 // Fetch historical data from BRAPI
 async function fetchBrapiHistorical(symbol: string, range: string): Promise<any[]> {
-  const token = Deno.env.get('BRAPI_TOKEN');
+  const token = process.env.BRAPI_TOKEN;
   const url = token 
     ? `https://brapi.dev/api/quote/${symbol}?range=${range}&interval=1d&token=${token}`
     : `https://brapi.dev/api/quote/${symbol}?range=${range}&interval=1d`;
@@ -157,7 +160,7 @@ async function fetchBrapiHistorical(symbol: string, range: string): Promise<any[
 
 // Fetch currency and macro data from HG Brasil
 async function fetchHgBrasilData(): Promise<any> {
-  const apiKey = Deno.env.get('HG_BRASIL_KEY');
+  const apiKey = process.env.HG_BRASIL_KEY;
   if (!apiKey) {
     console.log('HG Brasil API key not configured');
     return null;
@@ -490,7 +493,7 @@ async function handleCollect(): Promise<Response> {
   }
 }
 
-serve(async (req) => {
+serve(async (req: Request) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -523,14 +526,14 @@ serve(async (req) => {
         return await handleMarketStatus();
       
       case 'collect':
-        if (req.method !== 'POST') {
+        { if (req.method !== 'POST') {
           return new Response(JSON.stringify({ error: 'Method not allowed' }), {
             status: 405,
             headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Allow': 'POST' }
           });
         }
 
-        const authResult = await validateCollectAuthorization(req, (key) => Deno.env.get(key));
+        const authResult = await validateCollectAuthorization(req, (key) => process.env[key]);
         if (!authResult.ok) {
           console.warn(`[collect] acesso negado: motivo=${authResult.reason || 'unknown'}`);
           return new Response(JSON.stringify({ error: 'Unauthorized' }), {
@@ -540,7 +543,7 @@ serve(async (req) => {
         }
 
         const identity = getRequestIdentity(req);
-        const rateLimit = await checkCollectRateLimit(identity, (key) => Deno.env.get(key), fetch);
+        const rateLimit = await checkCollectRateLimit(identity, (key) => process.env[key], fetch);
         if (!rateLimit.allowed) {
           console.warn(`[collect] limite excedido: identidade=${identity}`);
           return new Response(JSON.stringify({ error: 'Too many requests' }), {
@@ -554,7 +557,7 @@ serve(async (req) => {
         }
 
         console.log(`[collect] autorizado via ${authResult.authType}, restante=${rateLimit.remaining}`);
-        return await handleCollect();
+        return await handleCollect(); }
       
       default:
         return new Response(JSON.stringify({ 
