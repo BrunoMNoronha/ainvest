@@ -1,0 +1,199 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ainvest.app/schemas/IndicatorSnapshot.json",
+  "title": "IndicatorSnapshot",
+  "description": "Snapshot de indicadores técnicos para um ativo",
+  "type": "object",
+  "required": ["symbol", "rsi", "adx", "ema8", "ema80", "updatedAt"],
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "description": "Símbolo do ativo",
+      "pattern": "^[A-Z]{4}[0-9]{1,2}$",
+      "examples": ["PETR4", "VALE3"]
+    },
+    "rsi": {
+      "type": "object",
+      "description": "Índice de Força Relativa (14 períodos)",
+      "required": ["value", "status", "signal"],
+      "properties": {
+        "value": {
+          "type": "number",
+          "description": "Valor do RSI",
+          "minimum": 0,
+          "maximum": 100,
+          "examples": [45.2, 72.5, 28.3]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["oversold", "neutral", "overbought"],
+          "description": "Status do RSI"
+        },
+        "signal": {
+          "type": "string",
+          "enum": ["buy", "sell", "neutral"],
+          "description": "Sinal gerado pelo RSI"
+        }
+      },
+      "additionalProperties": false
+    },
+    "adx": {
+      "type": "object",
+      "description": "Average Directional Index (14 períodos)",
+      "required": ["value", "status", "signal"],
+      "properties": {
+        "value": {
+          "type": "number",
+          "description": "Valor do ADX",
+          "minimum": 0,
+          "maximum": 100,
+          "examples": [28.5, 15.2, 45.0]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["weak", "moderate", "strong", "very-strong"],
+          "description": "Força da tendência"
+        },
+        "signal": {
+          "type": "string",
+          "enum": ["trending", "ranging"],
+          "description": "Tipo de mercado"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ema8": {
+      "type": "object",
+      "description": "Média Móvel Exponencial de 8 períodos",
+      "required": ["value", "above", "signal"],
+      "properties": {
+        "value": {
+          "type": "number",
+          "description": "Valor da EMA 8",
+          "minimum": 0,
+          "examples": [38.20, 67.50]
+        },
+        "above": {
+          "type": "boolean",
+          "description": "Se o preço está acima da EMA 8"
+        },
+        "signal": {
+          "type": "string",
+          "enum": ["bullish", "bearish"],
+          "description": "Sinal baseado na posição do preço"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ema80": {
+      "type": "object",
+      "description": "Média Móvel Exponencial de 80 períodos",
+      "required": ["value", "above", "signal"],
+      "properties": {
+        "value": {
+          "type": "number",
+          "description": "Valor da EMA 80",
+          "minimum": 0,
+          "examples": [36.50, 65.20]
+        },
+        "above": {
+          "type": "boolean",
+          "description": "Se o preço está acima da EMA 80"
+        },
+        "signal": {
+          "type": "string",
+          "enum": ["bullish", "bearish"],
+          "description": "Sinal baseado na posição do preço"
+        }
+      },
+      "additionalProperties": false
+    },
+    "volume": {
+      "type": "object",
+      "description": "Análise de volume",
+      "properties": {
+        "current": {
+          "type": "integer",
+          "description": "Volume atual",
+          "minimum": 0
+        },
+        "average": {
+          "type": "integer",
+          "description": "Volume médio (20 períodos)",
+          "minimum": 0
+        },
+        "ratio": {
+          "type": "number",
+          "description": "Razão volume atual / médio",
+          "minimum": 0,
+          "examples": [1.25, 0.85, 2.10]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["low", "normal", "high", "very-high"],
+          "description": "Classificação do volume"
+        }
+      },
+      "additionalProperties": false
+    },
+    "trend": {
+      "type": "object",
+      "description": "Análise de tendência geral",
+      "properties": {
+        "direction": {
+          "type": "string",
+          "enum": ["bullish", "bearish", "sideways"],
+          "description": "Direção da tendência"
+        },
+        "strength": {
+          "type": "string",
+          "enum": ["weak", "moderate", "strong"],
+          "description": "Força da tendência"
+        }
+      },
+      "additionalProperties": false
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Data e hora do cálculo dos indicadores"
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "symbol": "PETR4",
+      "rsi": {
+        "value": 45.2,
+        "status": "neutral",
+        "signal": "neutral"
+      },
+      "adx": {
+        "value": 28.5,
+        "status": "moderate",
+        "signal": "trending"
+      },
+      "ema8": {
+        "value": 38.20,
+        "above": true,
+        "signal": "bullish"
+      },
+      "ema80": {
+        "value": 36.50,
+        "above": true,
+        "signal": "bullish"
+      },
+      "volume": {
+        "current": 45000000,
+        "average": 40000000,
+        "ratio": 1.125,
+        "status": "normal"
+      },
+      "trend": {
+        "direction": "bullish",
+        "strength": "moderate"
+      },
+      "updatedAt": "2026-02-03T17:00:00Z"
+    }
+  ]
+}
