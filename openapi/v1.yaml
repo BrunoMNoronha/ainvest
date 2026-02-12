@@ -13,6 +13,9 @@ info:
     ## Fontes de Dados
     - **BRAPI.dev**: Ações, ETFs, FIIs, índices B3
     - **HG Brasil**: Câmbio, SELIC, CDI
+
+    ## Endpoints internos
+    - O endpoint `/collect` é interno/administrativo e não faz parte da exposição pública desta documentação.
   version: 1.0.0
   contact:
     name: AInvest Team
@@ -24,6 +27,12 @@ info:
 servers:
   - url: https://iycqotgkopbyxpfdojal.supabase.co/functions/v1/market-data
     description: Produção
+
+x-internal-endpoints:
+  - path: /collect
+    method: post
+    visibility: internal
+    description: Endpoint administrativo para coleta batch acionada por job interno.
 
 paths:
   /market-overview:
