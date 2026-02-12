@@ -62,118 +62,66 @@ Fluxo:
 4. `process_collected_data()` persiste com UPSERT
 5. Após 17h, fecha candle diário
 
-## Diagrama de Componentes
+## Padrão de Coleta de Dados
+
+Para otimizar a performance e reduzir a dependência de APIs externas em tempo real, o AInvest utiliza um padrão de coleta assíncrona.
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         FRONTEND                                 │
-│                                                                  │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐          │
-│  │   Pages      │  │  Components  │  │    Hooks     │          │
-│  │              │  │              │  │              │          │
-│  │  - Index     │  │  - Market    │  │  - useMarket │          │
-│  │  - Signals   │  │    Overview  │  │    Overview  │          │
-│  │  - Analysis  │  │  - PriceChart│  │  - useQuotes │          │
-│  │  - Alerts    │  │  - WatchList │  │  - useHistor │          │
-│  │              │  │  - SignalCard│  │    ical      │          │
-│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘          │
-│         │                 │                 │                   │
-│         └─────────────────┼─────────────────┘                   │
-│                           │                                     │
-│                    ┌──────▼───────┐                             │
-│                    │   Services   │                             │
-│                    │              │                             │
-│                    │  marketApi   │                             │
-│                    └──────┬───────┘                             │
-│                           │                                     │
-└───────────────────────────┼─────────────────────────────────────┘
-                            │
-                            │ HTTPS
-                            ▼
-┌───────────────────────────────────────────────────────────────────┐
-│                      EDGE FUNCTION                                 │
-│                                                                    │
-│  ┌────────────────────────────────────────────────────────────┐   │
-│  │                    market-data                              │   │
-│  │                                                             │   │
-│  │   ┌─────────────┐    ┌─────────────┐    ┌──────────────┐  │   │
-│  │   │   Router    │───▶│    Cache    │───▶│   Fetchers   │  │   │
-│  │   │             │    │   (Upstash) │    │              │  │   │
-│  │   │ /overview   │    │             │    │  - BRAPI     │  │   │
-│  │   │ /quote      │    │  SWR Logic  │    │  - HG Brasil │  │   │
-│  │   │ /historical │    │             │    │              │  │   │
-│  │   │ /status     │    │             │    │              │  │   │
-│  │   └─────────────┘    └─────────────┘    └──────────────┘  │   │
-│  │                                                             │   │
-│  └────────────────────────────────────────────────────────────┘   │
-│                                                                    │
-└───────────────────────────────────────────────────────────────────┘
-                            │
-                            │ HTTPS
-                            ▼
-┌───────────────────────────────────────────────────────────────────┐
-│                     EXTERNAL APIs                                  │
-│                                                                    │
-│  ┌──────────────────────┐    ┌──────────────────────┐            │
-│  │      BRAPI.dev       │    │     HG Brasil        │            │
-│  │                      │    │                      │            │
-│  │  - Cotações B3       │    │  - USD/BRL           │            │
-│  │  - Histórico OHLCV   │    │  - SELIC/CDI         │            │
-│  │  - Info de ativos    │    │  - Indicadores macro │            │
-│  │                      │    │                      │            │
-│  └──────────────────────┘    └──────────────────────┘            │
-│                                                                    │
-└───────────────────────────────────────────────────────────────────┘
+┌───────────┐      ┌────────────────────────┐      ┌────────────────────┐      ┌───────────────┐
+│  pg_cron  │───▶ │ collect_market_data()  │───▶ │ Edge Function      │───▶ │ External APIs │
+│ (Scheduler) │      │ (PostgreSQL Function)  │      │ (/collect Endpoint)│      │ (BRAPI, etc.) │
+└───────────┘      └──────────────┬─────────┘      └──────────┬─────────┘      └───────────────┘
+                                  │                         │
+                                  └───────────────────┬─────┘
+                                                      │ INSERT/UPDATE
+                                                      ▼
+                                       ┌────────────────────────┐
+                                       │   PostgreSQL DB        │
+                                       │ (quotes_latest, etc)   │
+                                       └────────────────────────┘
 ```
 
-## Fluxo de Dados
+1.  **Agendamento**: `pg_cron` executa a função `collect_market_data()` em intervalos regulares (e.g., a cada 30 minutos).
+2.  **Chamada Segura**: A função `collect_market_data()` usa `pg_net` para fazer uma chamada POST para o endpoint `/collect` da Edge Function.
+3.  **Coleta**: A Edge Function busca os dados mais recentes das APIs externas (BRAPI, HG Brasil).
+4.  **Persistência**: Os dados coletados são então inseridos ou atualizados (UPSERT) nas tabelas do banco de dados, como `quotes_latest` e `market_candles_daily`.
 
-### Request de Cotação
+Este ciclo garante que o banco de dados local tenha um "cache quente" dos dados de mercado mais importantes durante o pregão.
+
+## Fluxo de Dados (Estratégia "DB-First")
+
+A aplicação frontend adota uma estratégia **"DB-first"** para buscar dados, priorizando a leitura do banco de dados PostgreSQL antes de recorrer à Edge Function. Isso resulta em menor latência e maior resiliência.
+
+### Diagrama de Fluxo
 
 ```
-1. Usuário abre Dashboard
-      │
-      ▼
-2. useMarketOverview() é chamado
-      │
-      ▼
-3. React Query verifica cache local
-      │
-      ├──▶ Cache FRESH: retorna dados
-      │
-      └──▶ Cache STALE ou MISS:
-            │
-            ▼
-4. marketApi.getMarketOverview()
-      │
-      ▼
-5. supabase.functions.invoke('market-data/market-overview')
-      │
-      ▼
-6. Edge Function verifica Upstash Redis
-      │
-      ├──▶ Cache HIT (fresh): retorna com X-Cache: HIT
-      │
-      └──▶ Cache MISS ou STALE:
-            │
-            ▼
-7. Fetch paralelo: BRAPI + HG Brasil
-      │
-      ▼
-8. Processa e combina dados
-      │
-      ▼
-9. Armazena no Upstash com TTL
-      │
-      ▼
-10. Retorna para frontend com X-Cache: MISS
-      │
-      ▼
-11. React Query armazena em cache local
-      │
-      ▼
-12. Componente renderiza dados
+                                    ┌───────────────────────┐
+                               ┌───▶│   PostgreSQL DB       │
+                               │    │ (leitura principal)   │
+             (1) Read DB First │    └───────────────────────┘
+                               │
+┌──────────┐      ┌────────────┴───┐      ┌────────────────────┐      ┌───────────────┐
+│ Frontend │───▶  │ marketApi.ts   │      │ Edge Function      │      │ External APIs │
+│  (Hook)  │      │ (DB-first logic) │───▶  │ (/quote Endpoint)  │───▶  │ (BRAPI, etc.) │
+└──────────┘      └────────────┬───┘ (3)  └──────────┬─────────┘      └───────────────┘
+                               │ Fallback           │
+                 (2) DB stale? │                    │ (4) Cache
+                               │                    │
+                               └───────────────────▶│ Upstash Redis  │
+                                                    └────────────────┘
 ```
+
+### Request de Cotação (DB-First)
+
+1.  **Chamada do Hook**: Um componente de UI (e.g., `Watchlist`) chama o hook `useQuotes()`.
+2.  **Estratégia DB-First**: O hook invoca `getQuotesDBFirst()` no `marketApi.ts`.
+    *   **Tentativa 1 (Banco de Dados)**: A função primeiro consulta a tabela `quotes_latest` no PostgreSQL.
+    *   **Validação de "Frescor"**: Se os dados existem e foram atualizados nos últimos 5 minutos (`MAX_DATA_AGE_MS`), eles são retornados imediatamente ao frontend.
+3.  **Fallback para Edge Function**: Se os dados no banco de dados estão ausentes ou "velhos" (stale):
+    *   A função `getQuotes()` é chamada como fallback.
+    *   Ela invoca a Edge Function `/quote`.
+4.  **Cache SWR na Edge Function**: A Edge Function, por sua vez, possui sua própria lógica de cache com Upstash Redis, funcionando como um segundo nível de cache para proteger as APIs externas.
+5.  **Renderização**: Os dados (do DB ou da Edge Function) são armazenados no cache do React Query e renderizados na UI.
 
 ## Edge Function: market-data
 

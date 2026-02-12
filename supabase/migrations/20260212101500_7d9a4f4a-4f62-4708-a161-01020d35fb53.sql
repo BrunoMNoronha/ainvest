@@ -33,7 +33,7 @@ BEGIN
   END IF;
 
   -- 2. Preparar chamada à Edge Function
-  v_edge_url := 'https://iycqotgkopbyxpfdojal.supabase.co/functions/v1/market-data/collect';
+  v_edge_url := 'https://wuyrortvggsjawhviwzn.supabase.co/functions/v1/market-data/collect';
   v_anon_key := nullif(trim(current_setting('app.settings.supabase_anon_key', true)), '');
 
   IF v_anon_key IS NULL THEN

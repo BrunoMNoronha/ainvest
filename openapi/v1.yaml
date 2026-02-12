@@ -25,14 +25,8 @@ info:
     url: https://ainvest.app/terms
 
 servers:
-  - url: https://iycqotgkopbyxpfdojal.supabase.co/functions/v1/market-data
+  - url: https://wuyrortvggsjawhviwzn.supabase.co/functions/v1/market-data
     description: Produção
-
-x-internal-endpoints:
-  - path: /collect
-    method: post
-    visibility: internal
-    description: Endpoint administrativo para coleta batch acionada por job interno.
 
 paths:
   /market-overview:
@@ -224,6 +218,58 @@ paths:
                 nextOpen: null
                 isHoliday: false
                 holidayName: null
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /collect:
+    post:
+      summary: Coleta de dados de mercado (interno)
+      description: |
+        Endpoint interno acionado por um job agendado (ex: pg_cron) para buscar 
+        e retornar dados de mercado em lote.
+        **Requer autenticação via chave de API anônima do projeto.**
+      operationId: collectMarketData
+      tags:
+        - Internal
+      security:
+        - AnonKeyAuth: []
+      responses:
+        '200':
+          description: Coleta de dados executada com sucesso.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  quotes:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Quote'
+                  macro:
+                    type: object
+                    nullable: true
+                  quotesCount:
+                    type: integer
+                  executionTimeMs:
+                    type: integer
+                  collectedAt:
+                    type: string
+                    format: date-time
+        '401':
+          description: Não autorizado. Chave de API ausente ou inválida.
+        '405':
+          description: Método não permitido. Apenas POST é aceito.
+        '429':
+          description: Limite de requisições excedido.
+          headers:
+            Retry-After:
+              schema:
+                type: string
+              description: Tempo em segundos para aguardar antes de tentar novamente.
+              example: "60"
         '500':
           $ref: '#/components/responses/InternalError'
 
@@ -560,3 +606,15 @@ components:
 tags:
   - name: Market Data
     description: Endpoints de dados de mercado
+  - name: Internal
+    description: Endpoints para uso interno e administrativo.
+
+security:
+  - BearerAuth: []
+
+components:
+  securitySchemes:
+    AnonKeyAuth:
+      type: http
+      scheme: bearer
+      description: Chave anônima (anon key) do projeto Supabase, usada para autenticar requisições internas (servidor-para-servidor).
