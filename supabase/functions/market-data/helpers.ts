@@ -20,15 +20,22 @@ function toBase64Url(input: ArrayBuffer): string {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 }
 
-function parseJwtPayload(token: string): Record<string, any> | null {
+function parseJwtPayload(token: string): { header: Record<string, any>; payload: Record<string, any> } | null {
   const parts = token.split('.');
   if (parts.length !== 3) return null;
 
   try {
+    const headerB64 = parts[0].replace(/-/g, '+').replace(/_/g, '/');
     const payloadB64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const headerPadding = '='.repeat((4 - (headerB64.length % 4)) % 4);
     const padding = '='.repeat((4 - (payloadB64.length % 4)) % 4);
-    const decoded = atob(payloadB64 + padding);
-    return JSON.parse(decoded);
+    const decodedHeader = atob(headerB64 + headerPadding);
+    const decodedPayload = atob(payloadB64 + padding);
+
+    return {
+      header: JSON.parse(decodedHeader),
+      payload: JSON.parse(decodedPayload),
+    };
   } catch {
     return null;
   }
@@ -77,9 +84,34 @@ export async function validateCollectAuthorization(req: Request, readEnv: EnvRea
     return { ok: false, status: 403, reason: 'jwt_secret_not_configured' };
   }
 
-  const payload = parseJwtPayload(token);
-  if (!payload) {
+  const parsedToken = parseJwtPayload(token);
+  if (!parsedToken) {
     return { ok: false, status: 401, reason: 'invalid_jwt_payload' };
+  }
+
+  if (parsedToken.header.alg !== 'HS256') {
+    return { ok: false, status: 401, reason: 'invalid_jwt_alg' };
+  }
+
+  const expectedIssuer = readEnv('MARKET_DATA_JWT_ISS');
+  if (!expectedIssuer) {
+    return { ok: false, status: 403, reason: 'jwt_issuer_not_configured' };
+  }
+
+  const expectedAudience = readEnv('MARKET_DATA_JWT_AUD');
+  if (!expectedAudience) {
+    return { ok: false, status: 403, reason: 'jwt_audience_not_configured' };
+  }
+
+  const payload = parsedToken.payload;
+
+  if (String(payload.iss || '') !== expectedIssuer) {
+    return { ok: false, status: 401, reason: 'invalid_jwt_issuer' };
+  }
+
+  const audiences = Array.isArray(payload.aud) ? payload.aud.map(String) : [String(payload.aud || '')];
+  if (!audiences.includes(expectedAudience)) {
+    return { ok: false, status: 401, reason: 'invalid_jwt_audience' };
   }
 
   const isValidSignature = await verifyJwtHs256(token, jwtSecret);
@@ -88,6 +120,11 @@ export async function validateCollectAuthorization(req: Request, readEnv: EnvRea
   }
 
   const nowSeconds = Math.floor(Date.now() / 1000);
+  const nbfClockSkewSeconds = 30;
+  if (typeof payload.nbf === 'number' && payload.nbf > nowSeconds + nbfClockSkewSeconds) {
+    return { ok: false, status: 401, reason: 'jwt_not_active_yet' };
+  }
+
   if (typeof payload.exp === 'number' && payload.exp < nowSeconds) {
     return { ok: false, status: 401, reason: 'jwt_expired' };
   }
